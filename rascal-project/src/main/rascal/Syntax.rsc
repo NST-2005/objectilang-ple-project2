@@ -1,9 +1,9 @@
-module objectilang::Syntax
+module Syntax
 
 
 
 lexical WhitespaceChar = [\ \t\n\r] ;
-lexical LineComment    = "//" ![\n]* !>> ![\n] ;
+lexical LineComment    = @category="comment" "//" ![\n]* !>> ![\n] ;
 
 layout Layout = (WhitespaceChar | LineComment)* !>> [\ \t\n\r] !>> "//" ;
 
@@ -16,10 +16,10 @@ keyword Reserved
 lexical IdName     = ([a-zA-Z] [a-zA-Z0-9]*) \ Reserved ;
 lexical Identifier = [a-zA-Z0-9] !<< IdName !>> [a-zA-Z0-9] ;
 
-lexical IntLiteral     = [0-9]+ !>> [0-9] ;
-lexical BooleanLiteral = "true" | "false" ;
+lexical IntLiteral     = @category="number" [0-9]+ !>> [0-9] ;
+lexical BooleanLiteral = @category="keyword" "true" | @category="keyword" "false" ;
 
-lexical StringLiteral  = "\"" StringPart* "\"" ;
+lexical StringLiteral  = @category="string" "\"" StringPart* "\"" ;
 lexical StringPart     = StringChar | StringEscape | Interpolation ;
 lexical StringChar     = ![\"$\\] ;
 lexical StringEscape   = "\\" [\"\\$nt] ;

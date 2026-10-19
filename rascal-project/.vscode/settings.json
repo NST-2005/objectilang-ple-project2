@@ -1,5 +1,17 @@
 {
     "search.exclude": {
-        "/target/": true,
+        "/target/": true
     },
+    "[parametric-rascalmpl]": {
+        "editor.semanticHighlighting.enabled": true
+    },
+    "editor.semanticTokenColorCustomizations": {
+        "enabled": true,
+        "rules": {
+            "keyword:parametric-rascalmpl": "#AF00DB",
+            "comment:parametric-rascalmpl": "#008000",
+            "number:parametric-rascalmpl": "#098658",
+            "string:parametric-rascalmpl": "#A31515"
+        }
+    }
 }
