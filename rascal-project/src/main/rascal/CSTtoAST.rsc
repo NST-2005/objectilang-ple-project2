@@ -22,21 +22,18 @@ public AST::Expression convertirSumaCST(Tree expresion) {
 }
 
 public AST::Expression convertirExpresionCST(Tree expresion) {
-    // SUMA
     if (expresion.prod.def == label("addExp", sort("Expression"))) {
         return
             AST::addExp(
                 convertirExpresionCST(expresion.args[0]), convertirExpresionCST(expresion.args[4])
             );
     }
-    // EXPRESIONES BASE
     if (expresion.prod.def == label("baseExp", sort("Expression"))) {
         return convertirExpresionCST(expresion.args[0]);
     }
     if (expresion.prod.def == label("baseLit", sort("BaseExp"))) {
         return convertirExpresionCST(expresion.args[0]);
     }
-    // LITERALES
     if (expresion.prod.def == label("intLit", sort("Literal"))) {
         return convertirEntero("<expresion>");
     }
@@ -46,7 +43,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
     if (expresion.prod.def == label("stringLit", sort("Literal"))) {
         return convertirCadenaCST(expresion.args[0]);
     }
-    // OPERACIONES ARITMETICAS
  if (expresion.prod.def == label("subExp", sort("Expression"))) {
         return
             AST::subExp(
@@ -77,7 +73,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[0]), convertirExpresionCST(expresion.args[4])
             );
     }
-    // PARENTESIS E IDENTIFICADORES
     if (expresion.prod.def == label("baseParen", sort("BaseExp"))) {
         return convertirExpresionCST(expresion.args[2]);
     }
@@ -87,7 +82,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
     if (expresion.prod.def == lex("Identifier")) {
         return AST::identifier("<expresion>");
     }
-    // COMPARACIONES
     if (expresion.prod.def == label("ltExp", sort("Expression"))) {
         return
             AST::ltExp(
@@ -124,7 +118,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[0]), convertirExpresionCST(expresion.args[4])
             );
     }
-    // OPERACIONES LOGICAS
     if (expresion.prod.def == label("andExp", sort("Expression"))) {
         return
             AST::andExp(
@@ -137,14 +130,12 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[0]), convertirExpresionCST(expresion.args[4])
             );
     }
-    // OPERADORES UNARIOS
     if (expresion.prod.def == label("negExp", sort("Expression"))) {
         return AST::negExp(convertirExpresionCST(expresion.args[2]));
     }
     if (expresion.prod.def == label("minusExp", sort("Expression"))) {
         return AST::minusExp(convertirExpresionCST(expresion.args[2]));
     }
-    // CONDICIONALES
     if (expresion.prod.def == label("ifExp", sort("Expression"))) {
         return
             AST::ifExp(
@@ -153,7 +144,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[10])
             );
     }
-    // FLECHAS
     if (expresion.prod.def == label("arrowExp", sort("Expression"))) {
         return
             AST::arrowExp(
@@ -166,11 +156,9 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[0]), convertirExpresionCST(expresion.args[4])
             );
     }
-    // ACCESO A MIEMBROS
     if (expresion.prod.def == label("memberAccess", sort("BaseExp"))) {
         return AST::memberAccess(convertirExpresionCST(expresion.args[0]), "<expresion.args[4]>");
     }
-    // LLAMADAS A METODOS
     if (expresion.prod.def == label("callExp", sort("BaseExp"))) {
         list[AST::Expression] argumentos = [];
         Tree lista = expresion.args[4];
@@ -183,7 +171,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
         
         return AST::callExp(convertirExpresionCST(expresion.args[0]), argumentos);
     }
-    // CICLO FOR IN
     if (expresion.prod.def == label("forInExp", sort("Expression"))) {
         return
             AST::forInExp(
@@ -192,7 +179,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[12])
             );
     }
-    // CICLO FOR ARROW
     if (expresion.prod.def == label("forArrowExp", sort("Expression"))) {
         return
             AST::forArrowExp(
@@ -201,14 +187,12 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 convertirExpresionCST(expresion.args[12])
             );
     }
-    // CREACION DE OBJETOS Y OVERRIDES
     if (expresion.prod.def == label("newObj", sort("Expression"))) {
         AST::TypeRef tipo = convertirTipoCST(expresion.args[2]);
         
         list[AST::Expression] argumentos = [];
         list[AST::OverrideDecl] overrides = [];
         
-        // Argumentos del constructor
         Tree argumentosOpcionales = expresion.args[4];
         
         if (size(argumentosOpcionales.args) > 0) {
@@ -221,7 +205,6 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
                 }
             }
         }
-        // Metodos override del objeto
         Tree cuerpoOpcional = expresion.args[6];
         
         if (size(cuerpoOpcional.args) > 0) {
@@ -250,11 +233,9 @@ public AST::Expression convertirCadenaCST(Tree cadena) {
     for (Tree parte <- listaPartes.args) {
         Tree contenido = parte.args[0];
         
-        // Caracteres normales
         if (contenido.prod.def == lex("StringChar")) {
             texto += "<contenido>";
         }
-        // Interpolacion
         else if (contenido.prod.def == lex("Interpolation")) {
             tieneInterpolacion = true;
             
@@ -262,18 +243,15 @@ public AST::Expression convertirCadenaCST(Tree cadena) {
                 partes += [AST::stringText(texto)];
                 texto = "";
             }
-            // Interpolacion de la forma $nombre
             if (size(contenido.args) == 2) {
                 str nombre = "<contenido.args[1]>";
                 
                 partes += [AST::stringInterpolation(AST::identifier(nombre))];
             }
-            // Interpolacion de la forma ${expresion}
             else {
                 partes += [AST::stringInterpolation(convertirExpresionCST(contenido.args[1]))];
             }
         }
-        // Secuencias de escape
         else
             if (contenido.prod.def == lex("StringEscape")) {
                 map[str, str] escapes = (
@@ -535,7 +513,6 @@ public AST::Parameter convertirParametroCST(Tree parametro) {
 }
 
 public AST::OverrideDecl convertirOverrideCST(Tree declaracion) {
-    // Override con expresion
     if (declaracion.prod.def == label("overrideExp", sort("OverrideDecl"))) {
         str nombre = "<declaracion.args[2]>";
         
@@ -553,7 +530,6 @@ public AST::OverrideDecl convertirOverrideCST(Tree declaracion) {
         
         return AST::overrideExp(nombre, parametros, retorno, expresion);
     }
-    // Override con bloque
     if (declaracion.prod.def == label("overrideBlock", sort("OverrideDecl"))) {
         str nombre = "<declaracion.args[2]>";
         

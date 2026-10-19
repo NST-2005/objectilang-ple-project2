@@ -1,6 +1,5 @@
 
 method main {
-    // Comentario de prueba
     val numero = 123;
     val texto = "hola";
     val activo = true;
