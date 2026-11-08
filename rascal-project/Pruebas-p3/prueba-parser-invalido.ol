@@ -1,0 +1,3 @@
+method main {
+    val numero =
+}

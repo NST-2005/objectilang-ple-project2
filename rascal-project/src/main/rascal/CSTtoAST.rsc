@@ -7,7 +7,7 @@ import String;
 import Exception;
 
 public AST::Expression convertirEntero(str numero) {
-    return integerLiteral(toInt(numero));
+    return integerLiteral(toInt(numero, 10));
 }
 
 public AST::Expression convertirSuma(str izquierda, str derecha) {
@@ -35,11 +35,11 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
         return convertirExpresionCST(expresion.args[0]);
     }
     if (expresion.prod.def == label("intLit", sort("Literal"))) {
-        return convertirEntero("<expresion>");
+        return convertirEntero(unparse(expresion.args[0]));
     }
     if (expresion.prod.def == label("boolLit", sort("Literal"))) {
-    return AST::booleanLiteral("<expresion>" == "true");
-}
+        return AST::booleanLiteral(unparse(expresion.args[0]) == "true");
+    }
     if (expresion.prod.def == label("stringLit", sort("Literal"))) {
         return convertirCadenaCST(expresion.args[0]);
     }
@@ -80,7 +80,7 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
         return convertirExpresionCST(expresion.args[0]);
     }
     if (expresion.prod.def == lex("Identifier")) {
-        return AST::identifier("<expresion>");
+        return AST::identifier(unparse(expresion));
     }
     if (expresion.prod.def == label("ltExp", sort("Expression"))) {
         return
@@ -157,7 +157,7 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
             );
     }
     if (expresion.prod.def == label("memberAccess", sort("BaseExp"))) {
-        return AST::memberAccess(convertirExpresionCST(expresion.args[0]), "<expresion.args[4]>");
+        return AST::memberAccess(convertirExpresionCST(expresion.args[0]), unparse(expresion.args[4]));
     }
     if (expresion.prod.def == label("callExp", sort("BaseExp"))) {
         list[AST::Expression] argumentos = [];
@@ -234,7 +234,7 @@ public AST::Expression convertirCadenaCST(Tree cadena) {
         Tree contenido = parte.args[0];
         
         if (contenido.prod.def == lex("StringChar")) {
-            texto += "<contenido>";
+            texto += unparse(contenido);
         }
         else if (contenido.prod.def == lex("Interpolation")) {
             tieneInterpolacion = true;
@@ -244,7 +244,7 @@ public AST::Expression convertirCadenaCST(Tree cadena) {
                 texto = "";
             }
             if (size(contenido.args) == 2) {
-                str nombre = "<contenido.args[1]>";
+                str nombre = unparse(contenido.args[1]);
                 
                 partes += [AST::stringInterpolation(AST::identifier(nombre))];
             }
@@ -258,7 +258,7 @@ public AST::Expression convertirCadenaCST(Tree cadena) {
                     "\\n": "\n", "\\t": "\t", "\\\"": "\"",
                     "\\\\": "\\", "\\$": "$"
                 );
-                texto += escapes["<contenido>"];
+                texto += escapes[unparse(contenido)];
             }
     }
     
@@ -275,7 +275,7 @@ public AST::Expression convertirCadenaCST(Tree cadena) {
 
 public AST::TypeRef convertirTipoCST(Tree tipo) {
     if (tipo.prod.def == label("typeRef", sort("TypeRef"))) {
-        str nombre = "<tipo.args[0]>";
+        str nombre = unparse(tipo.args[0]);
         list[AST::TypeRef] genericos = [];
         
         Tree opcional = tipo.args[2];
@@ -306,7 +306,7 @@ public AST::VarModifier convertirModificadorCST(Tree modificador) {
 public AST::Statement convertirVariableCST(Tree declaracion) {
     if (declaracion.prod.def == label("varDeclExp", sort("VarDecl"))) {
         AST::VarModifier modificador = convertirModificadorCST(declaracion.args[0]);
-        str nombre = "<declaracion.args[2]>";
+        str nombre = unparse(declaracion.args[2]);
         AST::Expression valor = convertirExpresionCST(declaracion.args[8]);
         
         Tree tipoOpcional = declaracion.args[4];
@@ -321,7 +321,7 @@ public AST::Statement convertirVariableCST(Tree declaracion) {
     }
     if (declaracion.prod.def == label("varDeclBlock", sort("VarDecl"))) {
         AST::VarModifier modificador = convertirModificadorCST(declaracion.args[0]);
-        str nombre = "<declaracion.args[2]>";
+        str nombre = unparse(declaracion.args[2]);
         
         Tree tipoOpcional = declaracion.args[4];
         AST::Block bloque = convertirBlockCST(declaracion.args[8]);
@@ -386,14 +386,14 @@ public AST::Program convertirProgramaCST(Tree programa) {
 }
 public AST::Pattern convertirPatronCST(Tree patron) {
     if (patron.prod.def == label("patternId", sort("Pattern"))) {
-        return AST::patternId("<patron.args[0]>");
+        return AST::patternId(unparse(patron.args[0]));
     }
     if (patron.prod.def == label("patternTuple", sort("Pattern"))) {
         list[str] nombres = [];
         
         for (Tree elemento <- patron.args[2].args) {
             if (appl(prod(lex("Identifier"), _, _), _) := elemento) {
-                nombres += ["<elemento>"];
+                nombres += [unparse(elemento)];
             }
         }
         
@@ -407,7 +407,7 @@ public AST::Declaration convertirDeclaracionCST(Tree declaracion) {
         Tree objeto = declaracion.args[0];
         
         if (objeto.prod.def == label("objectDecl", sort("ObjectDecl"))) {
-            str nombre = "<objeto.args[2]>";
+            str nombre = unparse(objeto.args[2]);
             
             list[AST::TypeParam] genericos = [];
             Tree genericosOpcionales = objeto.args[4];
@@ -428,7 +428,7 @@ public AST::Declaration convertirDeclaracionCST(Tree declaracion) {
             
             if (size(herenciaOpcional.args) > 0) {
                 Tree herencia = herenciaOpcional.args[0];
-                str nombrePadre = "<herencia.args[2]>";
+                str nombrePadre = unparse(herencia.args[2]);
                 padres += [nombrePadre];
             }
             list[AST::ConstructorParam] constructores = [];
@@ -451,8 +451,8 @@ public AST::Declaration convertirDeclaracionCST(Tree declaracion) {
         Tree metodo = declaracion.args[0];
         
         if (metodo.prod.def == label("methodAssign", sort("MethodAssign"))) {
-            str objeto = "<metodo.args[0]>";
-            str nombre = "<metodo.args[4]>";
+            str objeto = unparse(metodo.args[0]);
+            str nombre = unparse(metodo.args[4]);
             
             list[AST::Parameter] parametros = [];
             Tree listaParametros = metodo.args[12];
@@ -488,7 +488,7 @@ public AST::Variance convertirVarianzaCST(Tree varianza) {
 }
 
 public AST::TypeParam convertirParametroGenericoCST(Tree parametro) {
-    str nombre = "<parametro.args[2]>";
+    str nombre = unparse(parametro.args[2]);
     Tree opcional = parametro.args[0];
     
     AST::Variance varianza = AST::invariant();
@@ -500,13 +500,13 @@ public AST::TypeParam convertirParametroGenericoCST(Tree parametro) {
 }
 public AST::ConstructorParam convertirConstructorParamCST(Tree parametro) {
     AST::VarModifier modificador = convertirModificadorCST(parametro.args[0]);
-    str nombre = "<parametro.args[2]>";
+    str nombre = unparse(parametro.args[2]);
     AST::TypeRef tipo = convertirTipoCST(parametro.args[6]);
     
     return AST::constructorParam(modificador, nombre, tipo);
 }
 public AST::Parameter convertirParametroCST(Tree parametro) {
-    str nombre = "<parametro.args[0]>";
+    str nombre = unparse(parametro.args[0]);
     AST::TypeRef tipo = convertirTipoCST(parametro.args[4]);
     
     return AST::parameter(nombre, tipo);
@@ -514,7 +514,7 @@ public AST::Parameter convertirParametroCST(Tree parametro) {
 
 public AST::OverrideDecl convertirOverrideCST(Tree declaracion) {
     if (declaracion.prod.def == label("overrideExp", sort("OverrideDecl"))) {
-        str nombre = "<declaracion.args[2]>";
+        str nombre = unparse(declaracion.args[2]);
         
         list[AST::Parameter] parametros = [];
         Tree listaParametros = declaracion.args[6];
@@ -531,7 +531,7 @@ public AST::OverrideDecl convertirOverrideCST(Tree declaracion) {
         return AST::overrideExp(nombre, parametros, retorno, expresion);
     }
     if (declaracion.prod.def == label("overrideBlock", sort("OverrideDecl"))) {
-        str nombre = "<declaracion.args[2]>";
+        str nombre = unparse(declaracion.args[2]);
         
         list[AST::Parameter] parametros = [];
         Tree listaParametros = declaracion.args[6];
