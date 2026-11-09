@@ -76,6 +76,33 @@ str generarParte(stringInterpolation(Expression expresion))
 
 str generarExpresion(interpolatedStringExp(interpolatedString(list[StringPart] partes)))
     = "(" + ( "\"\"" | it + " + " + generarParte(parte) | StringPart parte <- partes ) + ")";
+str generarTipo(TypeRef tipo) = generarTipo(tipo, {});
+
+str generarTipo(TypeRef tipo, set[str] variables) =
+    generarTipo(tipo, variables, "");
+
+str generarTipo(TypeRef tipo, set[str] variables, str prefijo) {
+    if (tipo.typeArgs != []) {
+        str argumentos = List::intercalate(", ",
+            [generarTipo(arg, variables, prefijo) | TypeRef arg <- tipo.typeArgs]);
+        return "<tipo.name>[<argumentos>]";
+    }
+    if (tipo.name in variables) {
+        return "&<prefijo><tipo.name>";
+    }
+    switch(tipo.name) {
+        case "Int":
+            return "int";
+        case "Bool":
+            return "bool";
+        case "String":
+            return "str";
+        default:
+            return tipo.name;
+    }
+}
+str generarDeclaracion(variableDecl(_, str nombre, TypeRef tipo, Expression valor))
+    = "<generarTipo(tipo)> <nombre> = <generarExpresion(valor)>;";
 str generarTipo(typeRef("Int", [])) = "int";
 str generarTipo(typeRef("Bool", [])) = "bool";
 str generarTipo(typeRef("String", [])) = "str";
@@ -112,6 +139,63 @@ str generarDeclaracion(variableDeclBloqueConTipo(_, str nombre, TypeRef _, Block
     "<nombre> = <generarBloqueValor(bloque)>;";
 str generarExpresion(powExp(Expression base, Expression exponente))
         = "objlPotencia(<generarExpresion(base)>, <generarExpresion(exponente)>)";
+str generarCampo(constructorParam(_, str nombre, TypeRef tipo), set[str] variables)
+        = "<generarTipo(tipo, variables)> <nombre>";
+str generarObjeto(
+    objectDecl(str nombre, list[TypeParam] tipos, _, _), map[str, ObjectDecl] objetos, map[str, str] familias) {
+    set[str] variables = {parametro.name| TypeParam parametro <- tipos};
+    str tipo
+        = generarTipo(
+              typeRef(nombre, [typeRef(parametro.name, []) | TypeParam parametro <- tipos]), variables
+          );
+    list[ConstructorParam] campos = camposDeObjeto(nombre, objetos, {});
+    list[str] formales = [generarCampo(campo, variables) | ConstructorParam campo <- campos];
+    str constructor = "objlNuevo<nombre>(<List::intercalate(", ", formales)>)";
+    if (nombre in familias) {
+        return "data <familias[nombre]> = <constructor>;";
+    }
+    if (tipos != []) {
+        // Un override puede usar parámetros genéricos que no aparecen en ningún campo.
+        list[str] tiposExplicitos = [
+            "type[&<tipos[indice].name>] _objlTipo<indice>" | int indice <- [0..size(tipos)]
+        ];
+        constructor += " | objlNuevo<nombre>(<List::intercalate(", ", formales + tiposExplicitos)>)";
+    }
+    return "data <tipo>(list[tuple[str, value]] _objlOverrides = []) = <constructor>;";
+}
+
+str generarExpresion(
+    objectCreation(TypeRef tipo, list[Expression] argumentos, list[OverrideDecl] reemplazos)) {
+    list[str] valores = [generarExpresion(arg) | Expression arg <- argumentos];
+    if (reemplazos != []) {
+        valores += ["#<generarTipo(arg)>" | TypeRef arg <- tipo.typeArgs];
+        str entradas
+            = List::intercalate(
+                  ", ", [generarReemplazo(reemplazo, tipo) | OverrideDecl reemplazo <- reemplazos]
+              );
+        valores += ["_objlOverrides=[<entradas>]"];
+    }
+    str constructor = "objlNuevo<tipo.name>(<List::intercalate(", ", valores)>)";
+    if (tipo.typeArgs == []) {
+        return constructor;
+    }
+    return "({ <generarTipo(tipo)> objlInstancia = <constructor>; objlInstancia; })";
+}
+
+str generarReemplazo(OverrideDecl reemplazo, TypeRef receptor) {
+    list[str] formales
+        = ["<generarTipo(receptor)> este"] +
+          [generarParametro(parametro, {}) | Parameter parametro <- reemplazo.parameters];
+    str nombre = generarExpresion(stringLiteral(reemplazo.methodName));
+    str retorno = generarTipo(reemplazo.returnType);
+    str firma = List::intercalate(", ", formales);
+    return "\<<nombre>, (<retorno> (<firma>) { return <generarValorReemplazo(reemplazo)>; })\>";
+}
+
+str generarValorReemplazo(overrideExp(_, _, _, Expression expresion))
+    = generarExpresion(expresion);
+
+str generarValorReemplazo(overrideBlock(_, _, _, Block bloque)) = generarBloqueValor(bloque);
 str generarCampo(constructorParam(_, str nombre, TypeRef tipo)) = "<generarTipo(tipo)> <nombre>";
 str generarCampoGenerico(constructorParam(_, str nombre, TypeRef _)) = "value <nombre>";
 
@@ -131,6 +215,52 @@ list[ConstructorParam] camposDeObjeto(
     return campos + objeto.constructorParams;
 }
 
+private str raizNoGenerica(str nombre, map[str, ObjectDecl] objetos, set[str] visitados) {
+    if (nombre notin objetos || nombre in visitados || objetos[nombre].typeParams != []) {
+        return "";
+    }
+    if ([str padre] := objetos[nombre].parents) {
+        return raizNoGenerica(padre, objetos, visitados + {nombre});
+    }
+    return nombre;
+}
+
+private bool camposCompatibles(str raiz, map[str, str] raices, map[str, ObjectDecl] objetos) {
+    map[str, TypeRef] tipos = ();
+    for (str nombre <- raices, raices[nombre] == raiz,
+         constructorParam(_, str campo, TypeRef tipo) <- objetos[nombre].constructorParams) {
+        if (campo in tipos && tipos[campo] != tipo) {
+            return false;
+        }
+        tipos[campo] = tipo;
+    }
+    return true;
+}
+
+// Los constructores conservan la clase concreta aunque una familia comparta el tipo Rascal.
+map[str, str] familiasVariantes(Program programa, map[str, ObjectDecl] objetos) {
+    map[str, str] raices = (nombre: raizNoGenerica(nombre, objetos, {}) | str nombre <- objetos);
+    set[str] usadas = {};
+    visit (programa) {
+        case typeRef(str nombre, list[TypeRef] argumentos): {
+            if (nombre in objetos) {
+                list[TypeParam] parametros = objetos[nombre].typeParams;
+                for (int indice <- [0..size(argumentos)],
+                     indice < size(parametros),
+                     parametros[indice].variance != invariant(),
+                     typeRef(str argumento, []) := argumentos[indice],
+                     argumento in raices, raices[argumento] != "") {
+                    usadas += {raices[argumento]};
+                }
+            }
+        }
+    }
+    set[str] compatibles = {raiz | str raiz <- usadas, camposCompatibles(raiz, raices, objetos)};
+    return (nombre: raices[nombre] | str nombre <- raices, raices[nombre] in compatibles);
+}
+
+str generarParametro(parameter(str nombre, TypeRef tipo), set[str] variables) =
+    "<generarTipo(tipo, variables, "_objl_")> <nombre>";
 str generarObjeto(
     objectDecl(str nombre, list[TypeParam] parametrosTipo, _, _),
     map[str, ObjectDecl] objetos) {
@@ -153,13 +283,41 @@ str generarExpresion(memberAccess(Expression receptor, str miembro))
 str generarParametro(parameter(str nombre, TypeRef tipo)) = "<generarTipo(tipo)> <nombre>";
 
 str generarMetodoEnObjeto(
-    methodAssign(_, str nombre, list[Parameter] parametros, TypeRef retorno, Block cuerpo),
-    str objeto) {
-    list[str] formales = ["<objeto> este"] +
-        [generarParametro(parametro) | Parameter parametro <- parametros];
+    MethodAssign metodo, ObjectDecl objeto, map[str, ObjectDecl] objetos, map[str, str] familias) {
+    set[str] variables = {parametro.name| TypeParam parametro <- objeto.typeParams};
+    TypeRef receptor = typeRef(objeto.name, [typeRef(parametro.name, []) | TypeParam parametro <- objeto.typeParams]);
+    str tipoReceptor = generarTipo(receptor, variables, "_objl_");
+    str retorno = generarTipo(metodo.returnType, variables, "_objl_");
+    str formalReceptor = "<tipoReceptor> este";
+    if (objeto.name in familias) {
+        str campos = List::intercalate(", ", ["_" | _ <- camposDeObjeto(objeto.name, objetos, {})]);
+        formalReceptor += ":objlNuevo<objeto.name>(<campos>)";
+    }
+    list[str] formales
+        = [formalReceptor] +
+          [generarParametro(parametro, variables) | Parameter parametro <- metodo.parameters];
+    list[str] tipos
+        = [tipoReceptor] + [generarTipo(p.paramType, variables, "_objl_") | Parameter p <- metodo.parameters];
+    list[str] argumentos = ["este"] + [p.name | Parameter p <- metodo.parameters];
+
+    str nombre = generarExpresion(stringLiteral(metodo.methodName));
     str firma = List::intercalate(", ", formales);
-    return "<generarTipo(retorno)> objlMetodo<nombre>(<firma>) = <generarBloqueValor(cuerpo)>;";
+    str firmaReemplazo = List::intercalate(", ", tipos);
+    str llamada = List::intercalate(", ", argumentos);
+    return
+        "<retorno> objlMetodo<metodo.methodName>(<firma>) {
+        '    for (\<<nombre>, <retorno>(<firmaReemplazo>) _objlReemplazo\> \<- este._objlOverrides) {
+        '        return _objlReemplazo(<llamada>);
+        '    }
+        '    <generarRetornoMetodo(metodo)>
+        '}";
 }
+
+str generarRetornoMetodo(methodAssign(_, _, _, _, Block cuerpo))
+    = "return <generarBloqueValor(cuerpo)>;";
+
+str generarRetornoMetodo(methodAssignSinCuerpo(_, str nombre, _, _))
+    = "throw <generarExpresion(stringLiteral("El método <nombre> requiere un override."))>;";
 
 tuple[str, list[TypeRef]] firmaMetodo(MethodAssign metodo) =
     <metodo.methodName, [parametro.paramType | Parameter parametro <- metodo.parameters]>;
@@ -180,6 +338,35 @@ str generarExpresion(
     list[str] valores = [generarExpresion(receptor)] + [generarExpresion(arg) | Expression arg <- argumentos];
     return "objlMetodo<nombre>(<List::intercalate(", ", valores)>)";
 }
+str generarExpresion(callExp(identifier("print"), [Expression argumento])) =
+    "print(<generarExpresion(argumento)>)";
+
+str generarExpresion(callExp(identifier("println"), [Expression argumento])) =
+    "println(<generarExpresion(argumento)>)";
+
+str generarExpresion(callExp(identifier("range"), [Expression inicio, Expression fin])) =
+    "[<generarExpresion(inicio)>..<generarExpresion(fin)>]";
+
+str generarExpresion(forInExp(Pattern patron, Expression coleccion, Expression cuerpo)) =
+    generarFor(patron, coleccion, cuerpo);
+
+str generarExpresion(forArrowExp(Pattern patron, Expression coleccion, Expression cuerpo)) =
+    generarFor(patron, coleccion, cuerpo);
+
+str generarFor(Pattern patron, Expression coleccion, Expression cuerpo) =
+    "(void () { for (<generarPatron(patron)> \<- <generarExpresion(coleccion)>) { <generarExpresion(cuerpo)>; } })()";
+
+str generarPatron(patternId(str nombre)) = nombre;
+
+str generarPatron(patternTuple(list[str] nombres)) =
+    "\<<List::intercalate(", ", nombres)>\>";
+
+str generarExpresion(
+    memberAccess(memberAccess(Expression receptor, "getClass"), "getSimpleName"))
+    = "String::substring(Node::getName(<generarExpresion(receptor)>), String::size(\"objlNuevo\"))";
+
+str generarExpresion(memberAccess(Expression receptor, str miembro))
+    = "(<generarExpresion(receptor)>).<miembro>";
 
 str generarArgumentos(list[Expression] argumentos) =
     List::intercalate(", ", [generarExpresion(arg) | Expression arg <- argumentos]);

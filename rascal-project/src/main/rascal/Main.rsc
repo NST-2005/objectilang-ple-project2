@@ -14,13 +14,23 @@ void main(loc archivo) {
 
     if (program(list[Declaration] antes, mainMethod(block(list[Statement] instrucciones)), list[Declaration] despues) := programa) {
         RascalRuntime entorno = createRascalRuntime();
+        entorno.eval(#value, "import IO;");
+        entorno.eval(#value, "import Node;");
+        entorno.eval(#value, "import String;");
         list[Declaration] declaraciones = antes + despues;
         map[str, ObjectDecl] objetos = (objeto.name: objeto |
             Declaration declaracion <- declaraciones, declObject(ObjectDecl objeto) := declaracion);
 
+        map[str, str] familias = familiasVariantes(programa, objetos);
+        for (str nombre <- familias, familias[nombre] == nombre) {
+            entorno.eval(#value, "data <nombre>(list[tuple[str, value]] _objlOverrides = []);");
+        }
+        for (str nombre <- familias, familias[nombre] != nombre) {
+            entorno.eval(#value, "alias <nombre> = <familias[nombre]>;");
+        }
         for (Declaration declaracion <- declaraciones) {
             if (declObject(ObjectDecl objeto) := declaracion) {
-                entorno.eval(#value, generarObjeto(objeto, objetos));
+                entorno.eval(#value, generarObjeto(objeto, objetos, familias));
             }
         }
         list[MethodAssign] metodos = [
@@ -30,7 +40,7 @@ void main(loc archivo) {
             throw "Objeto desconocido para el método <metodo.methodName>: <metodo.objectName>.";
         }
         for (str nombre <- objetos, MethodAssign metodo <- metodosDeObjeto(nombre, objetos, metodos)) {
-            entorno.eval(#value, generarMetodoEnObjeto(metodo, nombre));
+            entorno.eval(#value, generarMetodoEnObjeto(metodo, objetos[nombre], objetos, familias));
         }
         entorno.eval(
         #value,
@@ -48,8 +58,10 @@ void main(loc archivo) {
             Statement instruccion = instrucciones[indice];
 
             if (stmtExp(Expression expresion) := instruccion) {
-                value resultado = entorno.eval(#value, generarExpresion(expresion) + ";").val;
-                if (indice == cantidad - 1) { println(resultado); }
+                Result[value] resultado = entorno.eval(#value, generarExpresion(expresion) + ";");
+                if (indice == cantidad - 1, result(value valor) := resultado) {
+                    println(valor);
+                }
             }
             else {
                 entorno.eval(#value, generarDeclaracion(instruccion));
