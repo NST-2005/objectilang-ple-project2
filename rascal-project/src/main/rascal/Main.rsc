@@ -4,11 +4,13 @@ import AST;
 import Parser;
 import CSTtoAST;
 import Generador;
+import TypeChecker;
 import IO;
 import util::Eval;
 import List;
 void main(loc archivo) {
     Program programa = convertirProgramaCST(parseObjectilang(archivo));
+    comprobarPrograma(programa);
 
     if (program(list[Declaration] antes, mainMethod(block(list[Statement] instrucciones)), list[Declaration] despues) := programa) {
         RascalRuntime entorno = createRascalRuntime();

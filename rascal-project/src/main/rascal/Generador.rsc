@@ -76,6 +76,14 @@ str generarExpresion(interpolatedStringExp(interpolatedString(list[StringPart] p
 str generarTipo(typeRef("Int", [])) = "int";
 str generarTipo(typeRef("Bool", [])) = "bool";
 str generarTipo(typeRef("String", [])) = "str";
+str generarTipo(typeRef(str nombre, list[TypeRef] argumentos)) {
+    if (size(argumentos) == 0) {
+        return nombre;
+    }
+    list[str] tipos = [generarTipo(argumento) | TypeRef argumento <- argumentos];
+    str tiposFormateados = List::intercalate(", ", tipos);
+    return "<nombre><tiposFormateados>";
+}
 
 str generarDeclaracion(variableDecl(_, str nombre, TypeRef tipo, Expression valor))
     = "<generarTipo(tipo)> <nombre> = <generarExpresion(valor)>;";

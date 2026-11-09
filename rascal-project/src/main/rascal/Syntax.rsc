@@ -56,11 +56,11 @@ syntax Parameter  = parameter: Identifier ":" TypeRef ;
 
 syntax MainMethod = mainMethod: "method" "main" Block ;
 
-syntax Block = block: "{" {Statement ";"}* ";"? "}" ;
+syntax Block = block: "{" Statement* "}" ;
 
 syntax Statement
-  = stmtVar: VarDecl
-  | stmtExp: Expression
+  = stmtVar: VarDecl ";"?
+  | stmtExp: Expression ";"?
   ;
 
 syntax VarDecl
