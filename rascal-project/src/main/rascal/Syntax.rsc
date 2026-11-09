@@ -2,7 +2,8 @@ module Syntax
 
 
 
-lexical WhitespaceChar = [\ \t\n\r] ;
+lexical WhitespaceChar = [\ \t] ;
+lexical Newline       = [\n\r]+ ;
 lexical LineComment    = @category="comment" "//" ![\n]* !>> ![\n] ;
 
 layout Layout = (WhitespaceChar | LineComment)* !>> [\ \t\n\r] !>> "//" ;
@@ -18,6 +19,11 @@ lexical Identifier = [a-zA-Z0-9] !<< IdName !>> [a-zA-Z0-9] ;
 
 lexical IntLiteral     = @category="number" [0-9]+ !>> [0-9] ;
 lexical BooleanLiteral = @category="keyword" "true" | @category="keyword" "false" ;
+lexical CharLiteral    = "\'" [a-zA-Z0-9 ] "\'"
+                        | "\'" "\\" "n" "\'"
+                        | "\'" "\\" "t" "\'"
+                        | "\'" "\\" "\\" "\'"
+                        | "\'" "\\" "\'" "\'" ;
 
 lexical StringLiteral  = @category="string" "\"" StringPart* "\"" ;
 lexical StringPart     = StringChar | StringEscape | Interpolation ;
@@ -56,11 +62,16 @@ syntax Parameter  = parameter: Identifier ":" TypeRef ;
 
 syntax MainMethod = mainMethod: "method" "main" Block ;
 
-syntax Block = block: "{" Statement* "}" ;
+syntax Block = block: "{" Newline* StatementTerminated* Newline* "}" ;
 
 syntax Statement
-  = stmtVar: VarDecl ";"?
-  | stmtExp: Expression ";"?
+  = stmtVar: VarDecl
+  | stmtExp: Expression
+  ;
+
+syntax StatementTerminated
+  = statementNewline: Statement ";"? Newline+
+  | statementSemicolon: Statement ";"
   ;
 
 syntax VarDecl
@@ -94,6 +105,7 @@ syntax BaseExp
 syntax Literal
   = intLit:    IntLiteral
   | boolLit:   BooleanLiteral
+  | charLit:   CharLiteral
   | stringLit: StringLiteral
   ;
 

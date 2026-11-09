@@ -40,6 +40,10 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
     if (expresion.prod.def == label("boolLit", sort("Literal"))) {
         return AST::booleanLiteral(unparse(expresion.args[0]) == "true");
     }
+    if (expresion.prod.def == label("charLit", sort("Literal"))) {
+        str literal = unparse(expresion.args[0]);
+        return AST::charLiteral(literal[1..size(literal)-1]);
+    }
     if (expresion.prod.def == label("stringLit", sort("Literal"))) {
         return convertirCadenaCST(expresion.args[0]);
     }
@@ -352,7 +356,8 @@ public AST::Block convertirBlockCST(Tree bloque) {
     
     Tree lista = bloque.args[2];
     
-    for (Tree instruccion <- lista.args) {
+    for (Tree terminada <- lista.args) {
+        Tree instruccion = terminada.args[0];
         if (instruccion.prod.def == label("stmtExp", sort("Statement"))
             || instruccion.prod.def == label("stmtVar", sort("Statement"))) {
             instrucciones += [convertirStatementCST(instruccion)];

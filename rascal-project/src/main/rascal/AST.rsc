@@ -2,6 +2,7 @@ module AST
 data Expression
         = integerLiteral(int number)
         | booleanLiteral(bool flag)
+        | charLiteral(str valor)
         | stringLiteral(str content)
         | interpolatedStringExp(InterpolatedString interpolatedText)
         | identifier(str name)
