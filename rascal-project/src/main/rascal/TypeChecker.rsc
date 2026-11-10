@@ -5,6 +5,7 @@ import List;
 
 private TypeRef tipo(str nombre) = typeRef(nombre, []);
 private TypeRef unit() = tipo("Unit");
+private TypeRef rango() = tipo("$Range");
 private bool primitivo(str nombre) = nombre in {"Int", "Bool", "Char", "String", "Unit"};
 
 private void exigir(bool condicion, str mensaje) {
@@ -132,6 +133,14 @@ private TypeRef sustituir(TypeRef referencia, map[str, TypeRef] sustituciones) {
     return referencia;
 }
 
+private map[str, TypeRef] argumentosDeTipo(TypeRef referencia, ObjectDecl declarado) =
+    (declarado.typeParams[indice].name: referencia.typeArgs[indice]
+        | int indice <- [0..size(referencia.typeArgs)]);
+
+private map[str, TypeRef] argumentosDelMetodo(
+    TypeRef receptor, MethodAssign declarado, map[str, ObjectDecl] objetos
+) = receptor.name == declarado.objectName ? argumentosDeTipo(receptor, objetos[receptor.name]) : ();
+
 private map[str, TypeRef] unificar(
     TypeRef formal,
     TypeRef actual,
@@ -191,12 +200,7 @@ private TypeRef campo(
     set[str] visitados
 ) {
     ObjectDecl declarado = objeto(receptor, objetos);
-    map[str, TypeRef] sustituciones = ();
-    if (typeRef(_, list[TypeRef] argumentos) := receptor) {
-        for (int indice <- [0..size(argumentos)]) {
-            sustituciones[declarado.typeParams[indice].name] = argumentos[indice];
-        }
-    }
+    map[str, TypeRef] sustituciones = argumentosDeTipo(receptor, declarado);
     for (ConstructorParam parametro <- declarado.constructorParams) {
         if (parametro.name == nombre) {
             return sustituir(parametro.declaredType, sustituciones);
@@ -241,18 +245,15 @@ private TypeRef comprobarFor(
     list[MethodAssign] metodos,
     set[str] genericos
 ) {
-    // El lenguaje aún no define un tipo de colección; la fuente se comprueba de forma permisiva.
-    comprobarExpresion(fuente, entorno, objetos, metodos, genericos);
-    map[str, TypeRef] cuerpoEntorno = entorno;
+    TypeRef tipoFuente = comprobarExpresion(fuente, entorno, objetos, metodos, genericos);
+    exigir(tipoFuente == rango(), "la fuente del ciclo debe ser un rango.");
     if (patternId(str nombre) := patron) {
-        cuerpoEntorno[nombre] = unit();
+        map[str, TypeRef] cuerpoEntorno = entorno;
+        cuerpoEntorno[nombre] = tipo("Int");
+        comprobarExpresion(cuerpo, cuerpoEntorno, objetos, metodos, genericos);
+        return unit();
     }
-    if (patternTuple(list[str] nombres) := patron) {
-        for (str nombre <- nombres) {
-            cuerpoEntorno[nombre] = unit();
-        }
-    }
-    return comprobarExpresion(cuerpo, cuerpoEntorno, objetos, metodos, genericos);
+    throw "Error de tipos: un rango produce enteros, no tuplas.";
 }
 
 private void comprobarInterpolado(
@@ -277,6 +278,14 @@ private TypeRef comprobarLlamada(
     list[MethodAssign] metodos,
     set[str] genericos
 ) {
+    if (identifier("range") := funcion) {
+        exigir(size(argumentos) == 2, "range requiere exactamente dos argumentos.");
+        for (Expression argumento <- argumentos) {
+            exigir(comprobarExpresion(argumento, entorno, objetos, metodos, genericos) == tipo("Int"),
+                "los argumentos de range deben ser Int.");
+        }
+        return rango();
+    }
     if (identifier("print") := funcion) {
         for (Expression argumento <- argumentos) {
             comprobarExpresion(argumento, entorno, objetos, metodos, genericos);
@@ -292,34 +301,16 @@ private TypeRef comprobarLlamada(
     if (memberAccess(Expression receptor, str nombre) := funcion) {
         TypeRef tipoReceptor = comprobarExpresion(receptor, entorno, objetos, metodos, genericos);
         MethodAssign declarado = metodo(tipoReceptor, nombre, metodos, objetos, {});
-        list[Parameter] parametros = [];
-        TypeRef retorno = unit();
-        if (methodAssign(_, _, list[Parameter] ps, TypeRef r, _) := declarado) {
-            parametros = ps;
-            retorno = r;
-        }
-        if (methodAssignSinCuerpo(_, _, list[Parameter] ps, TypeRef r) := declarado) {
-            parametros = ps;
-            retorno = r;
-        }
+        list[Parameter] parametros = declarado.parameters;
         exigir(size(argumentos) == size(parametros), "cantidad incorrecta de argumentos.");
-        map[str, TypeRef] sustituciones = ();
-        for (int indice <- [0..size(argumentos)]) {
-            TypeRef actual = comprobarExpresion(argumentos[indice], entorno, objetos, metodos,
-                genericos);
-            map[str, TypeRef] encontrados = unificar(parametros[indice].paramType, actual,
-                genericos);
-            for (str nombreEncontrado <- encontrados) {
-                sustituciones[nombreEncontrado] = encontrados[nombreEncontrado];
-            }
-        }
+        map[str, TypeRef] sustituciones = argumentosDelMetodo(tipoReceptor, declarado, objetos);
         for (int indice <- [0..size(argumentos)]) {
             TypeRef esperado = sustituir(parametros[indice].paramType, sustituciones);
             TypeRef actual = comprobarExpresion(argumentos[indice], entorno, objetos, metodos,
                 genericos);
             exigir(esSubtipo(actual, esperado, objetos), "argumento incompatible.");
         }
-        return retorno;
+        return sustituir(declarado.returnType, sustituciones);
     }
     throw "solo se pueden invocar métodos de objetos o print/println.";
 }
@@ -357,28 +348,32 @@ private TypeRef comprobarExpresion(
         ObjectDecl declarado = objeto(referencia, objetos);
         list[ConstructorParam] parametros = parametrosConstructor(declarado.name, objetos, {});
         exigir(size(argumentos) == size(parametros), "cantidad incorrecta de argumentos.");
-        map[str, TypeRef] inferidos = ();
-        for (int indice <- [0..size(argumentos)]) {
-            TypeRef actual = comprobarExpresion(argumentos[indice], entorno, objetos, metodos,
-                genericos);
-            map[str, TypeRef] encontrados = unificar(parametros[indice].declaredType, actual,
-                {parametro.name | TypeParam parametro <- declarado.typeParams});
-            for (str nombreEncontrado <- encontrados) {
-                inferidos[nombreEncontrado] = encontrados[nombreEncontrado];
+        list[TypeRef] actuales = [comprobarExpresion(argumento, entorno, objetos, metodos, genericos)
+            | Expression argumento <- argumentos];
+        if (referencia.typeArgs == [] && declarado.typeParams != []) {
+            set[str] porInferir = {parametro.name | TypeParam parametro <- declarado.typeParams};
+            map[str, TypeRef] inferidos = ();
+            for (int indice <- [0..size(argumentos)]) {
+                inferidos += unificar(parametros[indice].declaredType, actuales[indice], porInferir);
             }
-        }
-        for (int indice <- [0..size(argumentos)]) {
-            TypeRef esperado = sustituir(parametros[indice].declaredType, inferidos);
-            TypeRef actual = comprobarExpresion(argumentos[indice], entorno, objetos, metodos,
-                genericos);
-            exigir(esSubtipo(actual, esperado, objetos), "argumento incompatible.");
-        }
-        comprobarOverrides(referencia, overrides, entorno, objetos, metodos, genericos);
-        if (inferidos != () && size(referencia.typeArgs) == 0) {
-            return typeRef(referencia.name,
+            for (str parametro <- porInferir) {
+                exigir(parametro in inferidos, "no se pudo inferir el argumento genérico <parametro>.");
+            }
+            referencia = typeRef(referencia.name,
                 [inferidos[parametro.name] | TypeParam parametro <- declarado.typeParams]);
         }
+        map[str, TypeRef] sustituciones = argumentosDeTipo(referencia, declarado);
+        for (int indice <- [0..size(argumentos)]) {
+            TypeRef esperado = sustituir(parametros[indice].declaredType, sustituciones);
+            exigir(esSubtipo(actuales[indice], esperado, objetos), "argumento incompatible en constructor.");
+        }
+        comprobarOverrides(referencia, overrides, objetos, metodos, genericos);
         return referencia;
+    }
+    if (memberAccess(memberAccess(Expression receptor, "getClass"), "getSimpleName") := expresion) {
+        TypeRef tipoReceptor = comprobarExpresion(receptor, entorno, objetos, metodos, genericos);
+        exigir(tipoReceptor.name in objetos, "getClass requiere un objeto.");
+        return tipo("String");
     }
     if (memberAccess(Expression receptor, str nombre) := expresion) {
         TypeRef tipoReceptor = comprobarExpresion(receptor, entorno, objetos, metodos, genericos);
@@ -467,8 +462,10 @@ private TypeRef comprobarExpresion(
             tipo("Bool")), "la condición requiere Bool.");
         TypeRef izquierda = comprobarExpresion(verdadero, entorno, objetos, metodos, genericos);
         TypeRef derecha = comprobarExpresion(falso, entorno, objetos, metodos, genericos);
-        exigir(esSubtipo(izquierda, derecha, objetos) || esSubtipo(derecha, izquierda, objetos),
-            "las ramas del condicional no son compatibles.");
+        if (esSubtipo(izquierda, derecha, objetos)) {
+            return derecha;
+        }
+        exigir(esSubtipo(derecha, izquierda, objetos), "las ramas del condicional no son compatibles.");
         return izquierda;
     }
     if (forInExp(Pattern patron, Expression fuente, Expression cuerpo) := expresion) {
@@ -496,7 +493,6 @@ private void comprobarAritmetica(
 private void comprobarOverrides(
     TypeRef receptor,
     list[OverrideDecl] overrides,
-    map[str, TypeRef] entorno,
     map[str, ObjectDecl] objetos,
     list[MethodAssign] metodos,
     set[str] genericos
@@ -515,12 +511,21 @@ private void comprobarOverrides(
             nombre = n; parametros = ps; retorno = r; bloque = b; esBloque = true;
         }
         MethodAssign existente = metodo(receptor, nombre, metodos, objetos, {});
-        list[Parameter] formales = [];
-        if (methodAssign(_, _, list[Parameter] ps, _, _) := existente) formales = ps;
-        if (methodAssignSinCuerpo(_, _, list[Parameter] ps, _) := existente) formales = ps;
+        list[Parameter] formales = existente.parameters;
         exigir(size(formales) == size(parametros), "override con cantidad incorrecta de parámetros.");
+        map[str, TypeRef] sustituciones = argumentosDelMetodo(receptor, existente, objetos);
         validarTipo(retorno, objetos, genericos, false);
+        exigir(esSubtipo(retorno, sustituir(existente.returnType, sustituciones), objetos),
+            "el retorno del override debe ser compatible con el método original.");
+        for (int indice <- [0..size(parametros)]) {
+            TypeRef parametro = parametros[indice].paramType;
+            validarTipo(parametro, objetos, genericos, false);
+            TypeRef formal = sustituir(formales[indice].paramType, sustituciones);
+            exigir(esSubtipo(formal, parametro, objetos),
+                "el parámetro del override debe aceptar los argumentos del método original.");
+        }
         map[str, TypeRef] local = (parametro.name: parametro.paramType | Parameter parametro <- parametros);
+        local["este"] = receptor;
         if (esBloque) {
             TypeRef actual = comprobarBloque(bloque, local, objetos, metodos, genericos);
             exigir(esSubtipo(actual, retorno, objetos), "retorno incompatible en override.");
@@ -588,16 +593,19 @@ public void comprobarPrograma(Program programa) {
         }
         for (MethodAssign declarado <- metodos) {
             exigir(declarado.objectName in objetos, "objeto dueño de método inexistente.");
-            validarTipo(declarado.returnType, objetos, {}, false);
+            list[TypeParam] tipos = objetos[declarado.objectName].typeParams;
+            set[str] genericos = {parametro.name | TypeParam parametro <- tipos};
+            validarTipo(declarado.returnType, objetos, genericos, false);
             for (Parameter parametro <- declarado.parameters) {
-                validarTipo(parametro.paramType, objetos, {}, false);
+                validarTipo(parametro.paramType, objetos, genericos, false);
             }
             if (methodAssign(_, _, list[Parameter] parametros, TypeRef retorno, Block cuerpo)
                     := declarado) {
                 map[str, TypeRef] entorno = (parametro.name: parametro.paramType |
                     Parameter parametro <- parametros);
-                entorno["este"] = tipo(declarado.objectName);
-                TypeRef actual = comprobarBloque(cuerpo, entorno, objetos, metodos, {});
+                entorno["este"] = typeRef(declarado.objectName,
+                    [tipo(parametro.name) | TypeParam parametro <- tipos]);
+                TypeRef actual = comprobarBloque(cuerpo, entorno, objetos, metodos, genericos);
                 exigir(esSubtipo(actual, retorno, objetos), "retorno incompatible en método.");
             }
         }

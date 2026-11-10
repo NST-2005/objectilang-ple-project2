@@ -213,12 +213,10 @@ public AST::Expression convertirExpresionCST(Tree expresion) {
         
         if (size(cuerpoOpcional.args) > 0) {
             Tree cuerpoObjeto = cuerpoOpcional.args[0];
-            Tree listaOverrides = cuerpoObjeto.args[2];
+            Tree listaOverrides = cuerpoObjeto.reemplazos;
             
-            for (Tree elemento <- listaOverrides.args) {
-                if (appl(prod(label(_, sort("OverrideDecl")), _, _), _) := elemento) {
-                    overrides += [convertirOverrideCST(elemento)];
-                }
+            for (Tree linea <- listaOverrides.args, linea.prod.def == sort("OverrideLine")) {
+                overrides += [convertirOverrideCST(linea.reemplazo)];
             }
         }
         return AST::objectCreation(tipo, argumentos, overrides);
@@ -352,18 +350,18 @@ public AST::Statement convertirStatementCST(Tree instruccion) {
 }
 
 public AST::Block convertirBlockCST(Tree bloque) {
-    list[AST::Statement] instrucciones = [];
-    
-    Tree lista = bloque.args[2];
-    
-    for (Tree terminada <- lista.args) {
-        Tree instruccion = terminada.args[0];
-        if (instruccion.prod.def == label("stmtExp", sort("Statement"))
-            || instruccion.prod.def == label("stmtVar", sort("Statement"))) {
-            instrucciones += [convertirStatementCST(instruccion)];
-        }
+    Tree contenido = bloque.contenido;
+    if (size(contenido.args) == 0) {
+        return AST::block([]);
     }
-    
+
+    list[AST::Statement] instrucciones = [];
+    Tree lista = contenido.args[0].instrucciones;
+    for (Tree instruccion <- lista.args,
+        appl(prod(label(_, sort("Statement")), _, _), _) := instruccion) {
+        instrucciones += [convertirStatementCST(instruccion)];
+    }
+
     return AST::block(instrucciones);
 }
 public AST::MainMethod convertirMainCST(Tree metodo) {
@@ -375,19 +373,15 @@ public AST::Program convertirProgramaCST(Tree programa) {
     list[AST::Declaration] antes = [];
     list[AST::Declaration] despues = [];
     
-    for (Tree declaracion <- raiz.args[0].args) {
-        if (appl(prod(label(_, sort("Declaration")), _, _), _) := declaracion) {
-            antes += [convertirDeclaracionCST(declaracion)];
-        }
+    for (Tree linea <- raiz.antes.args, linea.prod.def == sort("DeclarationLine")) {
+        antes += [convertirDeclaracionCST(linea.declaracion)];
     }
     
-    for (Tree declaracion <- raiz.args[4].args) {
-        if (appl(prod(label(_, sort("Declaration")), _, _), _) := declaracion) {
-            despues += [convertirDeclaracionCST(declaracion)];
-        }
+    for (Tree linea <- raiz.despues.args, linea.prod.def == sort("DeclarationLine")) {
+        despues += [convertirDeclaracionCST(linea.declaracion)];
     }
     
-    return AST::program(antes, convertirMainCST(raiz.args[2]), despues);
+    return AST::program(antes, convertirMainCST(raiz.principal), despues);
 }
 public AST::Pattern convertirPatronCST(Tree patron) {
     if (patron.prod.def == label("patternId", sort("Pattern"))) {

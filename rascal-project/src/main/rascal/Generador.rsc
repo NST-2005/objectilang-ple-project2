@@ -95,6 +95,8 @@ str generarTipo(TypeRef tipo, set[str] variables, str prefijo) {
             return "int";
         case "Bool":
             return "bool";
+        case "Char":
+            return "str";
         case "String":
             return "str";
         default:
@@ -103,18 +105,6 @@ str generarTipo(TypeRef tipo, set[str] variables, str prefijo) {
 }
 str generarDeclaracion(variableDecl(_, str nombre, TypeRef tipo, Expression valor))
     = "<generarTipo(tipo)> <nombre> = <generarExpresion(valor)>;";
-str generarTipo(typeRef("Int", [])) = "int";
-str generarTipo(typeRef("Bool", [])) = "bool";
-str generarTipo(typeRef("String", [])) = "str";
-str generarTipo(typeRef("Char", [])) = "str";
-str generarTipo(typeRef(str nombre, list[TypeRef] argumentos)) {
-    if (size(argumentos) == 0) {
-        return nombre;
-    }
-    list[str] tipos = [generarTipo(argumento) | TypeRef argumento <- argumentos];
-    str tiposFormateados = List::intercalate(", ", tipos);
-    return "<nombre><tiposFormateados>";
-}
 
 str generarDeclaracion(variableDecl(_, str nombre, TypeRef _, Expression valor))
     = "<nombre> = <generarExpresion(valor)>;";
@@ -242,6 +232,23 @@ map[str, str] familiasVariantes(Program programa, map[str, ObjectDecl] objetos) 
     map[str, str] raices = (nombre: raizNoGenerica(nombre, objetos, {}) | str nombre <- objetos);
     set[str] usadas = {};
     visit (programa) {
+        case variableDecl(_, _, typeRef(str nombre, []), ifExp(_, _, _)): {
+            // El valor elegido por el condicional puede ser de una clase derivada.
+            if (nombre in raices && raices[nombre] != "") {
+                usadas += {raices[nombre]};
+            }
+        }
+        case OverrideDecl reemplazo: {
+            // La función de reemplazo debe compartir los tipos Rascal de la firma original.
+            list[TypeRef] firma = [reemplazo.returnType] +
+                [parametro.paramType | Parameter parametro <- reemplazo.parameters];
+            visit (firma) {
+                case typeRef(str nombre, []):
+                    if (nombre in raices && raices[nombre] != "") {
+                        usadas += {raices[nombre]};
+                    }
+            }
+        }
         case typeRef(str nombre, list[TypeRef] argumentos): {
             if (nombre in objetos) {
                 list[TypeParam] parametros = objetos[nombre].typeParams;
@@ -278,8 +285,6 @@ str generarExpresion(objectCreation(typeRef(str nombre, _), list[Expression] arg
     return "objlNuevo<nombre>(<valores>)";
 }
 
-str generarExpresion(memberAccess(Expression receptor, str miembro))
-    = "(<generarExpresion(receptor)>).<miembro>";
 str generarParametro(parameter(str nombre, TypeRef tipo)) = "<generarTipo(tipo)> <nombre>";
 
 str generarMetodoEnObjeto(

@@ -3,10 +3,10 @@ module Syntax
 
 
 lexical WhitespaceChar = [\ \t] ;
-lexical Newline       = [\n\r]+ ;
-lexical LineComment    = @category="comment" "//" ![\n]* !>> ![\n] ;
+lexical Newline       = "\r\n" | "\n" | "\r" !>> [\n] ;
+lexical LineComment    = @category="comment" "//" ![\n\r]* !>> ![\n\r] ;
 
-layout Layout = (WhitespaceChar | LineComment)* !>> [\ \t\n\r] !>> "//" ;
+layout Layout = (WhitespaceChar | LineComment)* !>> [\ \t] !>> "//" ;
 
 keyword Reserved
   = "object" | "extends" | "val" | "var" | "method" | "main" | "new"
@@ -33,8 +33,10 @@ lexical Interpolation  = "${" Expression "}" | "$" Identifier ;
 
 
 start syntax Program
-  = program: Declaration* MainMethod Declaration*
+  = program: Newline* DeclarationLine* antes MainMethod principal Newline* DeclarationLine* despues
   ;
+
+syntax DeclarationLine = Declaration declaracion Newline* ;
 
 syntax Declaration
   = declObject: ObjectDecl
@@ -62,17 +64,15 @@ syntax Parameter  = parameter: Identifier ":" TypeRef ;
 
 syntax MainMethod = mainMethod: "method" "main" Block ;
 
-syntax Block = block: "{" Newline* StatementTerminated* Newline* "}" ;
+syntax Block = block: "{" Newline* BlockStatements? contenido "}" ;
 
 syntax Statement
   = stmtVar: VarDecl
   | stmtExp: Expression
   ;
 
-syntax StatementTerminated
-  = statementNewline: Statement ";"? Newline+
-  | statementSemicolon: Statement ";"
-  ;
+syntax BlockStatements = {Statement StatementSeparator}+ instrucciones StatementSeparator? ;
+syntax StatementSeparator = ";" Newline* | Newline+ ;
 
 syntax VarDecl
   = varDeclExp:   Modifier Identifier TypeAnnotation? "=" Expression
@@ -86,7 +86,9 @@ syntax TypeArgs = typeArgs: "[" {TypeRef ","}+ "]" ;
 
 
 syntax ObjectArgs = objectArgs: "(" {Expression ","}* ")" ;
-syntax ObjectBody = objectBody: "{" OverrideDecl* "}" ;
+syntax ObjectBody = objectBody: "{" Newline* OverrideLine* reemplazos "}" ;
+
+syntax OverrideLine = OverrideDecl reemplazo Newline* ;
 
 syntax OverrideDecl
   = overrideBlock: "override" Identifier "(" {Parameter ","}* ")" ":" TypeRef "=" Block
